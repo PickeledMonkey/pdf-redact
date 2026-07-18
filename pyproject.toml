@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdf-redact"
+version = "0.1.0"
+description = "GUI for fast PHI/PII redaction of PDF files with OCR support"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "PickeledMonkey" }]
+keywords = ["pdf", "redaction", "phi", "pii", "ocr", "hipaa"]
+dependencies = [
+    "pymupdf>=1.24.0",
+    "pillow>=10.0.0",
+    "customtkinter>=5.2.0",
+    "tkinterdnd2>=0.3.0",
+    "regex>=2024.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+pdf-redact = "pdf_redact.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pdf_redact*"]
+
+[tool.setuptools.package-data]
+pdf_redact = ["py.typed"]
