@@ -17,3 +17,6 @@ build/
 *.log
 .coverage
 htmlcov/
+*.spec.bak
+pdf-redact-portable.zip
+pdf-redact-source-portable.zip

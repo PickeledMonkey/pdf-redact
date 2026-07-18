@@ -34,7 +34,25 @@ Drag and drop a PDF, auto-detect sensitive spans (SSN, phone, email, DOB, MRN, p
 
 > **Note:** Pattern detection is a high-recall assistant, not a compliance guarantee. Always review findings before export. This tool does not replace a formal HIPAA de-identification process.
 
-## Requirements
+## Portable Windows package (no install)
+
+**Preferred for workstations:** unzip and run — no Python, no installer, no admin rights.
+
+1. Download **`pdf-redact-portable.zip`** from [GitHub Releases](https://github.com/PickeledMonkey/pdf-redact/releases) or the latest **Actions** artifact (`Build Windows portable`).
+2. Unzip anywhere (USB, Desktop, `C:\Tools\pdf-redact\`).
+3. Double-click **`Start-PDF-Redact.bat`**.
+
+OCR for scanned PDFs is included when the package contains a `tesseract\` folder (CI builds try to bundle it).
+
+### Build the portable zip on Windows
+
+```powershell
+cd pdf-redact
+powershell -ExecutionPolicy Bypass -File .\Build-Portable.ps1
+# → dist\pdf-redact-portable\  and  ..\pdf-redact-portable.zip
+```
+
+## Development install (Linux / macOS / Windows)
 
 - **Python 3.11+**
 - **Tesseract OCR** (optional, required for scanned PDFs)
@@ -50,28 +68,22 @@ sudo dnf install tesseract
 brew install tesseract
 ```
 
-## Install
-
 ```bash
 cd ~/projects/pdf-redact
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install -e .
 ```
 
-Or with requirements only:
-
-```bash
-pip install -r requirements.txt
-```
-
-## Run
+### Run from source
 
 ```bash
 source .venv/bin/activate
 pdf-redact
 # or:
 python -m pdf_redact.app
+# Windows portable source fallback:
+#   .\Start-PDF-Redact.bat
 ```
 
 ### Workflow
@@ -87,11 +99,16 @@ python -m pdf_redact.app
 ```
 pdf-redact/
 ├── pdf_redact/
-│   ├── app.py          # CustomTkinter GUI
-│   ├── detector.py     # PHI/PII span detection + PDF coords
-│   ├── ocr.py          # Tesseract / PyMuPDF OCR
-│   ├── patterns.py     # Regex rules
-│   └── redactor.py     # Apply redactions + page render
+│   ├── app.py              # CustomTkinter GUI
+│   ├── detector.py         # PHI/PII span detection + PDF coords
+│   ├── ocr.py              # Tesseract / PyMuPDF OCR
+│   ├── paths.py            # Portable / frozen path helpers
+│   ├── patterns.py         # Regex rules
+│   └── redactor.py         # Apply redactions + page render
+├── Build-Portable.ps1      # Windows no-install package builder
+├── Start-PDF-Redact.bat    # Double-click launcher
+├── PDF-Redact.spec         # PyInstaller spec
+├── SETUP.txt               # End-user portable guide
 ├── tests/
 ├── pyproject.toml
 └── requirements.txt

@@ -14,6 +14,7 @@ Desktop GUI for fast PHI/PII redaction of PDFs with optional OCR for scanned doc
 - Keep detection rules in `pdf_redact/patterns.py`
 - Permanent redaction only via PyMuPDF `add_redact_annot` + `apply_redactions` (never paint-over alone)
 - GUI must remain usable without Tesseract; OCR is optional with a clear status badge
+- Portable Windows = PyInstaller onedir + optional bundled `tesseract\`; resolve via `pdf_redact/paths.py`
 - Do not log full document text or findings to remote services
 
 ## Commands
@@ -24,6 +25,13 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 pytest
 python -m pdf_redact.app
+```
+
+### Windows portable (no install)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Build-Portable.ps1
+# CI: .github/workflows/build-windows-portable.yml → artifact pdf-redact-portable.zip
 ```
 
 ## Safety

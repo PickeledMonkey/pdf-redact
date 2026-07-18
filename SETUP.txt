@@ -1,0 +1,79 @@
+PDF Redact — Portable Windows Package (no install)
+==================================================
+
+Fast PHI/PII redaction for PDF files, including OCR for scanned/image PDFs.
+
+
+What you get
+------------
+  Start-PDF-Redact.bat     Double-click to launch
+  PDF-Redact\              App binaries (PyInstaller build — no Python needed)
+  tesseract\               Bundled OCR engine (when included in the package)
+  SETUP.txt                This guide
+  portable.json            Marks this folder as a portable copy
+
+
+Requirements on the work machine
+--------------------------------
+  - Windows 10 or 11 (64-bit)
+  - No Python install
+  - No installer / admin rights required for the app itself
+  - Display for the GUI
+
+
+Step 1 — Copy the folder
+------------------------
+  Unzip pdf-redact-portable.zip anywhere:
+
+    USB drive
+    Desktop
+    C:\Tools\pdf-redact\
+    Network share (local copy recommended for speed)
+
+  Keep the whole folder together. Do not separate PDF-Redact\ from the launcher.
+
+
+Step 2 — Launch
+---------------
+  Double-click:
+
+    Start-PDF-Redact.bat
+
+  Or run:
+
+    PDF-Redact\PDF-Redact.exe
+
+
+Step 3 — Redact
+---------------
+  1. Drag and drop a PDF (or use Open PDF)
+  2. Review auto-detected PHI/PII findings
+  3. For scanned pages: click Run OCR (needs tesseract\ folder)
+  4. Toggle findings or draw Manual boxes
+  5. Export Redacted → saves a new permanently redacted PDF
+
+
+OCR notes
+---------
+  If this package includes a tesseract\ folder, OCR works offline with no install.
+
+  If OCR shows "Tesseract missing":
+    - Copy a Tesseract-OCR install into tesseract\ next to Start-PDF-Redact.bat
+    - Or install Tesseract system-wide from:
+      https://github.com/UB-Mannheim/tesseract/wiki
+
+
+Building this package from source (developers)
+----------------------------------------------
+  On a Windows machine with Python 3.11+:
+
+    cd pdf-redact
+    powershell -ExecutionPolicy Bypass -File .\Build-Portable.ps1
+
+  Or download the CI artifact from GitHub Actions (build-windows-portable).
+
+
+Privacy
+-------
+  Everything runs locally. PDFs are not uploaded. Review findings before export;
+  pattern detection assists review and is not a compliance certification.

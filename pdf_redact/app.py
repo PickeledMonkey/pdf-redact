@@ -18,10 +18,14 @@ from PIL import Image, ImageTk
 from pdf_redact import __version__
 from pdf_redact.detector import Finding, detect_document
 from pdf_redact.ocr import document_needs_ocr, ocr_document, tesseract_available
+from pdf_redact.paths import configure_tesseract_env
 from pdf_redact.patterns import DEFAULT_DISABLED, RULES
 from pdf_redact.redactor import apply_redactions, render_page_image
 
 log = logging.getLogger(__name__)
+
+# Prefer portable Tesseract next to the exe before any OCR checks
+configure_tesseract_env()
 
 # Drag-and-drop (optional if tkinterdnd2 missing)
 try:

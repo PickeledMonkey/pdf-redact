@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
-import shutil
 from dataclasses import dataclass
 
 import fitz
+
+from pdf_redact.paths import configure_tesseract_env
 
 log = logging.getLogger(__name__)
 
@@ -19,12 +20,16 @@ class OcrStatus:
 
 
 def tesseract_available() -> OcrStatus:
-    path = shutil.which("tesseract")
+    """Detect Tesseract from portable bundle (preferred) or system PATH."""
+    path = configure_tesseract_env()
     if not path:
         return OcrStatus(
             available=False,
             engine="none",
-            detail="Tesseract not found on PATH. Install tesseract-ocr for image PDF support.",
+            detail=(
+                "Tesseract not found. For portable use, place tesseract.exe in a "
+                "tesseract\\ folder next to the app. Or install Tesseract OCR system-wide."
+            ),
         )
     return OcrStatus(available=True, engine="tesseract", detail=f"Found: {path}")
 
