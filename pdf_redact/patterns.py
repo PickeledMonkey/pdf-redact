@@ -96,8 +96,9 @@ RULES: list[PatternRule] = [
     PatternRule(
         name="dea",
         label="DEA",
-        pattern=_compile(r"\b(?:DEA)\s*[:#]?\s*[A-Z]{2}\d{7}\b|\b[A-Z]{2}\d{7}\b"),
-        description="DEA registration number",
+        # Contextual only (require DEA label) — free-floating XX####### is too noisy.
+        pattern=_compile(r"\bDEA\s*[:#]?\s*[A-Z]{2}\d{7}\b"),
+        description="DEA registration number (labeled)",
     ),
     PatternRule(
         name="ip_address",
@@ -126,8 +127,9 @@ RULES: list[PatternRule] = [
     ),
 ]
 
-# Categories that are off by default due to higher false-positive rates
-DEFAULT_DISABLED: frozenset[str] = frozenset({"zip", "npi", "dea"})
+# Categories that are off by default due to higher false-positive rates.
+# DEA is on by default now that the pattern requires a "DEA" label.
+DEFAULT_DISABLED: frozenset[str] = frozenset({"zip", "npi"})
 
 
 def active_rules(enabled: Iterable[str] | None = None) -> list[PatternRule]:

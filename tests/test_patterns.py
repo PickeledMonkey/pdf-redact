@@ -59,6 +59,56 @@ def test_ssn_dashed_in_pdf_gets_rects():
     assert findings[0].selected
 
 
+def test_ssn_spaced_dashes_and_dea_redact_from_pdf():
+    """Spaced SSN and labeled DEA must detect, locate, and burn out of export."""
+    from pdf_redact.detector import detect_document
+    from pdf_redact.redactor import apply_redactions
+
+    doc = fitz.open()
+    page = doc.new_page()
+    # Stack several SSNs so continuous-digit search is ambiguous without
+    # occurrence / word-list disambiguation.
+    page.insert_text((50, 72), "SSN (dashed): 123-45-6789")
+    page.insert_text((50, 96), "SSN (continuous): 123456789")
+    page.insert_text((50, 120), "SSN (spaced dashes): 123 - 45 - 6789")
+    page.insert_text((50, 144), "DEA: AB1234563")
+    page.insert_text((50, 168), "NPI: 1234567893")
+
+    findings = detect_document(doc)  # default enabled rules (includes DEA, not NPI)
+
+    assert any("123 - 45 - 6789" in f.text for f in findings if f.rule_name == "ssn")
+    spaced = next(f for f in findings if "123 - 45 - 6789" in f.text)
+    assert spaced.rects and spaced.selected
+
+    dea = next(f for f in findings if f.rule_name == "dea")
+    assert "AB1234563" in dea.text
+    assert dea.rects and dea.selected
+
+    out = "/tmp/pdf-redact-ssn-dea-test.pdf"
+    apply_redactions(doc, findings, out)
+    doc.close()
+
+    redacted = fitz.open(out)
+    text = redacted[0].get_text("text")
+    redacted.close()
+    assert "123 - 45 - 6789" not in text
+    assert "AB1234563" not in text
+    assert "123-45-6789" not in text
+
+
+def test_dea_default_enabled_contextual_only():
+    from pdf_redact.patterns import DEFAULT_DISABLED
+
+    assert "dea" not in DEFAULT_DISABLED
+    # Labeled form matches
+    matches = find_in_text("Provider DEA: AB1234563 done.", rules=active_rules(["dea"]))
+    assert len(matches) == 1
+    assert "AB1234563" in matches[0][3]
+    # Free-floating XX####### without DEA label does not match
+    matches = find_in_text("Code AB1234563 only.", rules=active_rules(["dea"]))
+    assert matches == []
+
+
 def test_phone():
     text = "Contact: (555) 123-4567 for follow-up."
     matches = find_in_text(text, rules=active_rules(["phone"]))

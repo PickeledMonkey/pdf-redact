@@ -30,7 +30,8 @@ Drag and drop a PDF, auto-detect sensitive spans (SSN, phone, email, DOB, MRN, p
 | Address | Street address lines | On |
 | IP Address | IPv4 | On |
 | ZIP | US ZIP codes | Off (noisy) |
-| NPI / DEA | Provider identifiers | Off (noisy) |
+| DEA | Labeled DEA numbers (`DEA: AB1234563`) | On |
+| NPI | Provider NPI | Off (noisy) |
 
 > **Note:** Pattern detection is a high-recall assistant, not a compliance guarantee. Always review findings before export. This tool does not replace a formal HIPAA de-identification process.
 
