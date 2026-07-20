@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Sequence
 
 import fitz  # PyMuPDF
+import regex as re
 
 from pdf_redact.patterns import PatternRule, active_rules
 
@@ -61,6 +62,37 @@ def find_in_text(
     return _non_overlapping(raw)
 
 
+def _search_variants(snippet: str) -> list[str]:
+    """Generate alternate spellings for page.search_for when separators differ."""
+    variants: list[str] = []
+    seen: set[str] = set()
+
+    def add(s: str) -> None:
+        if s and s not in seen:
+            seen.add(s)
+            variants.append(s)
+
+    add(snippet)
+    trimmed = " ".join(snippet.split())
+    add(trimmed)
+
+    # Collapse any run of non-digits between digit groups to a single hyphen /
+    # nothing — helps when extraction used · or en-dash but the visual text
+    # layer still responds to ASCII hyphen search (or vice versa).
+    digits_hyphen = re.sub(r"\D+", "-", snippet.strip())
+    digits_hyphen = re.sub(r"-+", "-", digits_hyphen).strip("-")
+    add(digits_hyphen)
+    add(re.sub(r"\D+", "", snippet))  # continuous digits (rarely finds dashed glyphs)
+
+    # Common PDF/OCR separator swaps
+    for sep in ("-", "\u00b7", "\u2013", "\u2014", " "):
+        if digits_hyphen.count("-") == 2:
+            parts = digits_hyphen.split("-")
+            add(sep.join(parts))
+
+    return variants
+
+
 def _rects_for_span(page: fitz.Page, start: int, end: int, full_text: str) -> list[fitz.Rect]:
     """Map character offsets from page.get_text('text') into quads/rects.
 
@@ -71,15 +103,9 @@ def _rects_for_span(page: fitz.Page, start: int, end: int, full_text: str) -> li
     if not snippet.strip():
         return []
 
-    # Prefer search_for — robust across OCR and text PDFs
-    rects = page.search_for(snippet, quads=False)
-    if rects:
-        return [fitz.Rect(r) for r in rects]
-
-    # Try a trimmed variant (whitespace differences)
-    trimmed = " ".join(snippet.split())
-    if trimmed and trimmed != snippet:
-        rects = page.search_for(trimmed, quads=False)
+    # Prefer search_for — robust across OCR and text PDFs; try separator variants
+    for candidate in _search_variants(snippet):
+        rects = page.search_for(candidate, quads=False)
         if rects:
             return [fitz.Rect(r) for r in rects]
 

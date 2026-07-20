@@ -26,6 +26,12 @@ def _compile(pattern: str, flags: int = re.IGNORECASE | re.MULTILINE) -> re.Patt
     return re.compile(pattern, flags)
 
 
+# Separators between SSN groups. PDF text layers and OCR often mangle ASCII
+# hyphens into en/em dashes, middle dots, or insert spaces around the dash
+# (e.g. "123 - 45 - 6789", "123·45·6789"). Allow zero-or-more of these so both
+# "123456789" and dashed forms match.
+_SSN_SEP = r"[\s.\u00b7\u2022\u2212\u2010-\u2015\-]*"
+
 # Ordered roughly by priority / uniqueness so overlapping matches can prefer
 # more specific labels during non-overlapping resolution.
 RULES: list[PatternRule] = [
@@ -33,7 +39,7 @@ RULES: list[PatternRule] = [
         name="ssn",
         label="SSN",
         pattern=_compile(
-            r"\b(?!000|666|9\d{2})\d{3}[-\s]?(?!00)\d{2}[-\s]?(?!0000)\d{4}\b"
+            rf"\b(?!000|666|9\d{{2}})\d{{3}}{_SSN_SEP}(?!00)\d{{2}}{_SSN_SEP}(?!0000)\d{{4}}\b"
         ),
         description="US Social Security Number",
     ),
