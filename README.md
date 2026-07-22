@@ -1,8 +1,8 @@
 # PDF Redact
 
-Desktop GUI for **fast PHI/PII redaction** of PDF files, with **OCR** for scanned/image PDFs.
+Desktop **GUI** for interactive PHI/PII redaction of PDF files, plus a **batch CLI** for large documents (up to ~15 000 pages), with **OCR** for scanned/image PDFs.
 
-Drag and drop a PDF, auto-detect sensitive spans (SSN, phone, email, DOB, MRN, payment cards, addresses, and more), review findings, draw manual boxes, and export a permanently redacted PDF.
+Drag and drop a PDF, auto-detect sensitive spans (SSN, phone, email, DOB, MRN, payment cards, addresses, and more), review findings, draw manual boxes, and export a permanently redacted PDF. For bulk jobs use `pdf-redact-batch`.
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -16,6 +16,8 @@ Drag and drop a PDF, auto-detect sensitive spans (SSN, phone, email, DOB, MRN, p
 - **Manual redaction boxes** — drag on the page
 - **Permanent redaction** using PyMuPDF (content removed, not just covered)
 - **Metadata scrub** on export (title/author/etc. cleared)
+- **Large-document GUI guardrails** (500+ pages): no auto full-scan, Scan Page / Scan All, jump-to-page, page-scoped findings list
+- **Batch CLI** (`pdf-redact-batch`) for headless full-document redaction with page ranges and JSON audit reports
 
 ### Detected categories
 
@@ -87,12 +89,26 @@ python -m pdf_redact.app
 #   .\Start-PDF-Redact.bat
 ```
 
-### Workflow
+### Batch CLI (large PDFs)
+
+```bash
+source .venv/bin/activate
+pdf-redact-batch --list-rules
+pdf-redact-batch big.pdf -o big_redacted.pdf --pages all --report report.json
+pdf-redact-batch big.pdf -o out.pdf --pages 1-500 --ocr auto --rules ssn,email,phone
+```
+
+- Processes page ranges (1-based: `1-100,250` or `all`)
+- Optional OCR: `never` (default) | `auto` | `always`
+- JSON report includes counts and **masked** samples (not full PHI)
+- Advisory note at 15 000+ pages; still allowed
+
+### Workflow (GUI)
 
 1. **Open** or drag-and-drop a PDF.
-2. App auto-scans the text layer for PHI/PII.
-3. For scans: click **Run OCR** (needs Tesseract), then review findings.
-4. Toggle categories or individual findings; draw **Manual** boxes if needed.
+2. For normal sizes, the app auto-scans the text layer. At **500+ pages**, auto full-scan is skipped — use **Scan Page** / **Scan All**, or the batch CLI.
+3. For scans: **Run OCR** (needs Tesseract). On large docs, prefer current-page OCR or `pdf-redact-batch --ocr auto`.
+4. Toggle categories or individual findings; draw **Manual** boxes if needed. Use **Go** to jump pages.
 5. **Export Redacted** — saves a new PDF with content permanently removed.
 
 ## Project layout
@@ -100,9 +116,12 @@ python -m pdf_redact.app
 ```
 pdf-redact/
 ├── pdf_redact/
-│   ├── app.py              # CustomTkinter GUI
+│   ├── app.py              # CustomTkinter GUI (+ large-doc guardrails)
+│   ├── batch.py            # CLI batch redaction for large PDFs
 │   ├── detector.py         # PHI/PII span detection + PDF coords
+│   ├── limits.py           # GUI / batch page thresholds
 │   ├── ocr.py              # Tesseract / PyMuPDF OCR
+│   ├── page_ranges.py      # --pages parser
 │   ├── paths.py            # Portable / frozen path helpers
 │   ├── patterns.py         # Regex rules
 │   └── redactor.py         # Apply redactions + page render

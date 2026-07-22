@@ -275,12 +275,43 @@ def detect_document(
     *,
     page_texts: dict[int, str] | None = None,
     enabled_rules: Iterable[str] | None = None,
+    page_indices: Sequence[int] | None = None,
+    progress_callback=None,
 ) -> list[Finding]:
-    """Run detection across all pages."""
+    """Run detection across pages.
+
+    Parameters
+    ----------
+    page_indices:
+        Optional 0-based page list. Default: every page.
+    progress_callback:
+        Optional ``callback(current_1based, total, message)``.
+    """
     rules = active_rules(enabled_rules)
+    if page_indices is None:
+        indices = list(range(doc.page_count))
+    else:
+        indices = [i for i in page_indices if 0 <= i < doc.page_count]
+
     all_findings: list[Finding] = []
-    for i in range(doc.page_count):
+    total = len(indices)
+    for n, i in enumerate(indices, start=1):
+        if progress_callback:
+            progress_callback(n, total, f"Scanning page {i + 1}/{doc.page_count}")
         page = doc.load_page(i)
         text = None if page_texts is None else page_texts.get(i)
         all_findings.extend(detect_page(page, i, text=text, rules=rules))
     return all_findings
+
+
+def findings_by_page(findings: Sequence[Finding]) -> dict[int, list[Finding]]:
+    """Index findings by page for O(1) page render lookups."""
+    by_page: dict[int, list[Finding]] = defaultdict(list)
+    for f in findings:
+        by_page[f.page_index].append(f)
+    return by_page
+
+
+def findings_for_page(findings: Sequence[Finding], page_index: int) -> list[Finding]:
+    """Return findings that belong to ``page_index`` (preserves order)."""
+    return [f for f in findings if f.page_index == page_index]

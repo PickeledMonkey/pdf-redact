@@ -16,7 +16,12 @@ import fitz
 from PIL import Image, ImageTk
 
 from pdf_redact import __version__
-from pdf_redact.detector import Finding, detect_document
+from pdf_redact.detector import Finding, detect_document, findings_for_page
+from pdf_redact.limits import (
+    GUI_FINDINGS_LIST_CAP,
+    GUI_LARGE_PAGE_THRESHOLD,
+    GUI_OCR_WARN_PAGES,
+)
 from pdf_redact.ocr import document_needs_ocr, ocr_document, tesseract_available
 from pdf_redact.paths import configure_tesseract_env
 from pdf_redact.patterns import DEFAULT_DISABLED, RULES
@@ -71,6 +76,9 @@ class PdfRedactApp:
         self._draw_start: tuple[float, float] | None = None
         self._draw_rect_id: int | None = None
         self._manual_mode = False
+        # Findings list: "page" = current page only; "all" = full list (capped)
+        self._findings_scope = "page"
+        self._large_doc = False
 
         self._build_ui()
         self._update_ocr_badge()
@@ -93,9 +101,12 @@ class PdfRedactApp:
         ctk.CTkButton(toolbar, text="Open PDF", width=100, command=self.open_file).pack(
             side="left", padx=(12, 6), pady=10
         )
-        ctk.CTkButton(toolbar, text="Scan PHI/PII", width=110, command=self.scan_document).pack(
-            side="left", padx=6, pady=10
-        )
+        ctk.CTkButton(
+            toolbar, text="Scan Page", width=90, command=self.scan_current_page
+        ).pack(side="left", padx=6, pady=10)
+        ctk.CTkButton(
+            toolbar, text="Scan All", width=90, command=self.scan_document
+        ).pack(side="left", padx=6, pady=10)
         ctk.CTkButton(
             toolbar, text="Run OCR", width=90, command=self.run_ocr, fg_color="#3d5a80"
         ).pack(side="left", padx=6, pady=10)
@@ -139,6 +150,13 @@ class PdfRedactApp:
         self.page_label = ctk.CTkLabel(nav, text="Page — / —")
         self.page_label.pack(side="left", padx=10)
         ctk.CTkButton(nav, text="▶", width=40, command=self.next_page).pack(side="left")
+        ctk.CTkLabel(nav, text="Go", font=ctk.CTkFont(size=12)).pack(side="left", padx=(12, 4))
+        self.page_jump = ctk.CTkEntry(nav, width=56, placeholder_text="#")
+        self.page_jump.pack(side="left")
+        self.page_jump.bind("<Return>", lambda _e: self.jump_to_page())
+        ctk.CTkButton(nav, text="Go", width=40, command=self.jump_to_page).pack(
+            side="left", padx=(4, 0)
+        )
         ctk.CTkButton(nav, text="−", width=36, command=lambda: self.adjust_zoom(-0.15)).pack(
             side="right", padx=(4, 0)
         )
@@ -186,6 +204,7 @@ class PdfRedactApp:
         right.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
         right.grid_rowconfigure(2, weight=1)
         right.grid_columnconfigure(0, weight=1)
+        # findings panel owns row 2 of right
 
         ctk.CTkLabel(
             right, text="Detection rules", font=ctk.CTkFont(size=14, weight="bold")
@@ -205,7 +224,7 @@ class PdfRedactApp:
 
         findings_header = ctk.CTkFrame(right, fg_color="transparent")
         findings_header.grid(row=2, column=0, sticky="nsew", padx=8, pady=(8, 4))
-        findings_header.grid_rowconfigure(1, weight=1)
+        findings_header.grid_rowconfigure(2, weight=1)
         findings_header.grid_columnconfigure(0, weight=1)
 
         hdr = ctk.CTkFrame(findings_header, fg_color="transparent")
@@ -213,16 +232,28 @@ class PdfRedactApp:
         ctk.CTkLabel(
             hdr, text="Findings", font=ctk.CTkFont(size=14, weight="bold")
         ).pack(side="left")
-        ctk.CTkButton(hdr, text="All", width=50, command=lambda: self._select_all(True)).pack(
-            side="right", padx=2
+        ctk.CTkButton(
+            hdr, text="This page", width=72, command=lambda: self._set_findings_scope("page")
+        ).pack(side="right", padx=2)
+        ctk.CTkButton(
+            hdr, text="All", width=44, command=lambda: self._set_findings_scope("all")
+        ).pack(side="right", padx=2)
+        ctk.CTkButton(
+            hdr, text="✓", width=32, command=lambda: self._select_all(True)
+        ).pack(side="right", padx=2)
+        ctk.CTkButton(
+            hdr, text="✗", width=32, command=lambda: self._select_all(False)
+        ).pack(side="right", padx=2)
+        self.findings_meta = ctk.CTkLabel(
+            findings_header, text="", anchor="w", font=ctk.CTkFont(size=11), text_color="#888"
         )
-        ctk.CTkButton(hdr, text="None", width=50, command=lambda: self._select_all(False)).pack(
-            side="right", padx=2
-        )
+        self.findings_meta.grid(row=1, column=0, sticky="ew", pady=(2, 0))
 
         self.findings_list = ctk.CTkScrollableFrame(findings_header)
-        self.findings_list.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
+        self.findings_list.grid(row=2, column=0, sticky="nsew", pady=(6, 0))
+        # Parallel to displayed rows: indices into self.findings
         self._finding_vars: list[ctk.BooleanVar] = []
+        self._finding_row_indices: list[int] = []
 
         # Status bar
         self.status = ctk.CTkLabel(host, text="", anchor="w", font=ctk.CTkFont(size=12))
@@ -301,14 +332,40 @@ class PdfRedactApp:
             self.findings = []
             self.page_texts = {}
             self.current_page = 0
+            self._large_doc = self.doc.page_count >= GUI_LARGE_PAGE_THRESHOLD
+            # Large docs: list current page only by default to keep UI responsive
+            self._findings_scope = "page" if self._large_doc else "all"
             self.drop_hint.place_forget()
             self._refresh_findings_panel()
             self.render_current()
-            needs = document_needs_ocr(self.doc)
-            hint = " — scanned pages detected; click Run OCR" if needs else ""
-            self._set_status(f"Loaded {path.name} ({self.doc.page_count} pages){hint}")
-            # Auto-scan text layer immediately
-            self.scan_document()
+
+            n_pages = self.doc.page_count
+            # Sample first pages only for OCR hint on huge files
+            sample = 25 if self._large_doc else None
+            needs = document_needs_ocr(self.doc, sample_limit=sample)
+            hint = " — scanned pages likely; use Run OCR or batch --ocr auto" if needs else ""
+
+            if self._large_doc:
+                self._set_status(
+                    f"Loaded {path.name} ({n_pages} pages) — large document mode{hint}"
+                )
+                messagebox.showinfo(
+                    "Large PDF",
+                    f"This file has {n_pages} pages "
+                    f"(threshold {GUI_LARGE_PAGE_THRESHOLD}).\n\n"
+                    "Interactive tips:\n"
+                    "  • Auto full-scan is skipped\n"
+                    "  • Use Scan Page for the current page\n"
+                    "  • Use Scan All only if you accept a long wait\n"
+                    "  • Jump to a page with Go\n\n"
+                    "For full-document jobs (up to ~15 000 pages), prefer the CLI:\n"
+                    "  pdf-redact-batch input.pdf -o out.pdf --report report.json\n\n"
+                    "Spot-check output pages here after batch.",
+                )
+            else:
+                self._set_status(f"Loaded {path.name} ({n_pages} pages){hint}")
+                # Auto-scan text layer for normal-sized docs only
+                self.scan_document()
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Open failed", str(exc))
 
@@ -318,6 +375,8 @@ class PdfRedactApp:
         if self.current_page > 0:
             self.current_page -= 1
             self.render_current()
+            if self._findings_scope == "page":
+                self._refresh_findings_panel()
 
     def next_page(self) -> None:
         if not self.doc:
@@ -325,6 +384,29 @@ class PdfRedactApp:
         if self.current_page < self.doc.page_count - 1:
             self.current_page += 1
             self.render_current()
+            if self._findings_scope == "page":
+                self._refresh_findings_panel()
+
+    def jump_to_page(self) -> None:
+        if not self.doc:
+            return
+        raw = self.page_jump.get().strip()
+        if not raw:
+            return
+        try:
+            n = int(raw)
+        except ValueError:
+            messagebox.showwarning("Invalid page", "Enter a page number (1-based).")
+            return
+        if n < 1 or n > self.doc.page_count:
+            messagebox.showwarning(
+                "Out of range", f"Page must be between 1 and {self.doc.page_count}."
+            )
+            return
+        self.current_page = n - 1
+        self.render_current()
+        if self._findings_scope == "page":
+            self._refresh_findings_panel()
 
     def adjust_zoom(self, delta: float) -> None:
         self.zoom = max(0.5, min(3.5, self.zoom + delta))
@@ -333,36 +415,69 @@ class PdfRedactApp:
     def render_current(self) -> None:
         if not self.doc:
             return
+        page_findings = findings_for_page(self.findings, self.current_page)
         img = render_page_image(
             self.doc,
             self.current_page,
             zoom=self.zoom,
-            findings=self.findings,
+            findings=page_findings,
         )
         self._photo = ImageTk.PhotoImage(img)
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, anchor="nw", image=self._photo, tags="page")
         self.canvas.configure(scrollregion=(0, 0, img.width, img.height))
+        mode = "large-doc" if self._large_doc else "zoom"
         self.page_label.configure(
-            text=f"Page {self.current_page + 1} / {self.doc.page_count}  ·  zoom {self.zoom:.0%}"
+            text=(
+                f"Page {self.current_page + 1} / {self.doc.page_count}  ·  "
+                f"{self.zoom:.0%}  ·  {mode}"
+            )
         )
 
     # -------------------------------------------------------------- scan/OCR
+    def scan_current_page(self) -> None:
+        if not self.doc:
+            self._set_status("Open a PDF first.")
+            return
+        self._scan_pages([self.current_page], replace_other_pages=False)
+
     def scan_document(self) -> None:
         if not self.doc:
             self._set_status("Open a PDF first.")
             return
+        if self._large_doc:
+            ok = messagebox.askyesno(
+                "Scan entire document?",
+                f"This PDF has {self.doc.page_count} pages.\n\n"
+                "A full interactive scan may take a long time and use a lot of memory.\n"
+                "Prefer: Scan Page, or CLI:\n"
+                "  pdf-redact-batch input.pdf -o out.pdf\n\n"
+                "Continue with full Scan All?",
+            )
+            if not ok:
+                self._set_status("Full scan cancelled — use Scan Page or pdf-redact-batch.")
+                return
+        self._scan_pages(list(range(self.doc.page_count)), replace_other_pages=True)
+
+    def _scan_pages(self, page_indices: list[int], *, replace_other_pages: bool) -> None:
+        def progress(cur: int, total: int, msg: str) -> None:
+            self.root.after(0, lambda: self.progress.set(cur / max(total, 1)))
+            self.root.after(0, lambda: self._set_status(msg))
 
         def work() -> None:
-            self.root.after(0, lambda: self.progress.set(0.3))
-            self.root.after(0, lambda: self._set_status("Scanning for PHI/PII…"))
-            findings = detect_document(
+            new_findings = detect_document(
                 self.doc,
                 page_texts=self.page_texts or None,
                 enabled_rules=self._enabled_rules(),
+                page_indices=page_indices,
+                progress_callback=progress,
             )
-            self.findings = findings
-            self.root.after(0, lambda: self.progress.set(1.0))
+            if replace_other_pages:
+                self.findings = new_findings
+            else:
+                # Replace findings only for scanned pages; keep others
+                keep = [f for f in self.findings if f.page_index not in set(page_indices)]
+                self.findings = keep + new_findings
 
         def done() -> None:
             selected = sum(1 for f in self.findings if f.selected)
@@ -390,6 +505,26 @@ class PdfRedactApp:
             )
             return
 
+        page_indices: list[int]
+        if self.doc.page_count >= GUI_OCR_WARN_PAGES:
+            choice = messagebox.askyesnocancel(
+                "OCR scope",
+                f"This PDF has {self.doc.page_count} pages.\n\n"
+                "Yes = OCR current page only (recommended)\n"
+                "No = OCR entire document (slow / heavy)\n"
+                "Cancel = abort\n\n"
+                "For bulk OCR + redact, use:\n"
+                "  pdf-redact-batch input.pdf -o out.pdf --ocr auto",
+            )
+            if choice is None:
+                return
+            if choice:
+                page_indices = [self.current_page]
+            else:
+                page_indices = list(range(self.doc.page_count))
+        else:
+            page_indices = list(range(self.doc.page_count))
+
         def progress(cur: int, total: int, msg: str) -> None:
             self.root.after(0, lambda: self.progress.set(cur / max(total, 1)))
             self.root.after(0, lambda: self._set_status(msg))
@@ -398,15 +533,19 @@ class PdfRedactApp:
             texts = ocr_document(
                 self.doc,
                 only_if_needed=True,
+                page_indices=page_indices,
                 progress_callback=progress,
             )
-            self.page_texts = texts
-            findings = detect_document(
+            self.page_texts.update(texts)
+            new_findings = detect_document(
                 self.doc,
                 page_texts=self.page_texts,
                 enabled_rules=self._enabled_rules(),
+                page_indices=page_indices,
+                progress_callback=progress,
             )
-            self.findings = findings
+            keep = [f for f in self.findings if f.page_index not in set(page_indices)]
+            self.findings = keep + new_findings
 
         def done() -> None:
             self._refresh_findings_panel()
@@ -420,12 +559,19 @@ class PdfRedactApp:
         self._run_async(work, done)
 
     # -------------------------------------------------------------- findings
+    def _set_findings_scope(self, scope: str) -> None:
+        self._findings_scope = scope if scope in {"page", "all"} else "page"
+        self._refresh_findings_panel()
+
     def _refresh_findings_panel(self) -> None:
         for child in self.findings_list.winfo_children():
             child.destroy()
         self._finding_vars.clear()
+        self._finding_row_indices.clear()
 
         if not self.findings:
+            if hasattr(self, "findings_meta"):
+                self.findings_meta.configure(text="")
             ctk.CTkLabel(
                 self.findings_list,
                 text="No findings yet.",
@@ -433,9 +579,42 @@ class PdfRedactApp:
             ).pack(anchor="w", padx=4, pady=8)
             return
 
-        for idx, finding in enumerate(self.findings):
+        if self._findings_scope == "page":
+            pairs = [
+                (i, f)
+                for i, f in enumerate(self.findings)
+                if f.page_index == self.current_page
+            ]
+            scope_note = f"page {self.current_page + 1}"
+        else:
+            pairs = list(enumerate(self.findings))
+            scope_note = "all pages"
+
+        total_shown_source = len(pairs)
+        capped = False
+        if self._findings_scope == "all" and len(pairs) > GUI_FINDINGS_LIST_CAP:
+            pairs = pairs[:GUI_FINDINGS_LIST_CAP]
+            capped = True
+
+        if hasattr(self, "findings_meta"):
+            cap_msg = f" · showing first {GUI_FINDINGS_LIST_CAP}" if capped else ""
+            self.findings_meta.configure(
+                text=f"{len(self.findings)} total · list: {scope_note} "
+                f"({total_shown_source}{cap_msg})"
+            )
+
+        if not pairs:
+            ctk.CTkLabel(
+                self.findings_list,
+                text="No findings on this page.",
+                text_color="#888",
+            ).pack(anchor="w", padx=4, pady=8)
+            return
+
+        for idx, finding in pairs:
             var = ctk.BooleanVar(value=finding.selected)
             self._finding_vars.append(var)
+            self._finding_row_indices.append(idx)
 
             row = ctk.CTkFrame(self.findings_list, fg_color=("gray90", "gray20"))
             row.pack(fill="x", pady=2, padx=2)
@@ -467,6 +646,8 @@ class PdfRedactApp:
                 def jump() -> None:
                     self.current_page = page
                     self.render_current()
+                    if self._findings_scope == "page":
+                        self._refresh_findings_panel()
 
                 return jump
 
@@ -482,8 +663,13 @@ class PdfRedactApp:
             btn.pack(side="left", fill="x", expand=True, padx=4, pady=4)
 
     def _select_all(self, value: bool) -> None:
-        for f in self.findings:
-            f.selected = value
+        # Scope-aware: only toggle visible rows' findings when page-scoped
+        if self._findings_scope == "page" and self._finding_row_indices:
+            for i in self._finding_row_indices:
+                self.findings[i].selected = value
+        else:
+            for f in self.findings:
+                f.selected = value
         self._refresh_findings_panel()
         self.render_current()
 
@@ -574,12 +760,21 @@ class PdfRedactApp:
         if not out:
             return
 
+        def progress(cur: int, total: int, msg: str) -> None:
+            self.root.after(0, lambda: self.progress.set(cur / max(total, 1)))
+            self.root.after(0, lambda: self._set_status(msg))
+
         def work() -> None:
             self.root.after(0, lambda: self._set_status("Applying redactions…"))
-            self.root.after(0, lambda: self.progress.set(0.5))
             # Work on a fresh open so in-memory preview stays intact
-            apply_redactions(self.source_path, self.findings, out, only_selected=True)
-            self.root.after(0, lambda: self.progress.set(1.0))
+            apply_redactions(
+                self.source_path,
+                self.findings,
+                out,
+                only_selected=True,
+                progress_callback=progress,
+                large_document=self._large_doc,
+            )
 
         def done() -> None:
             self.progress.set(0)
@@ -594,7 +789,20 @@ class PdfRedactApp:
             self.doc.close()
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    """GUI entry. For batch/large PDFs use ``pdf-redact-batch``."""
+    # Allow `pdf-redact --help` without requiring a display
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] in {"-h", "--help"}:
+        print(
+            "pdf-redact — interactive PHI/PII PDF redaction GUI\n\n"
+            "  pdf-redact              Start the GUI\n"
+            "  pdf-redact-batch …      Batch mode for large PDFs (see --help)\n",
+            file=sys.stdout,
+        )
+        return
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -606,7 +814,8 @@ def main() -> None:
         print(
             "Could not start GUI (is a display available?)\n"
             f"{exc}\n"
-            "On headless systems use X11 forwarding or a desktop session.",
+            "On headless systems use X11 forwarding or a desktop session.\n"
+            "For large PDFs without a GUI: pdf-redact-batch --help",
             file=sys.stderr,
         )
         sys.exit(1)

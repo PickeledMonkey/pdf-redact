@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdf-redact"
-version = "0.1.1"
-description = "GUI for fast PHI/PII redaction of PDF files with OCR support"
+version = "0.2.0"
+description = "GUI + batch CLI for PHI/PII redaction of PDF files (incl. large docs)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -24,6 +24,7 @@ dev = ["pytest>=8.0", "pyinstaller>=6.0.0"]
 
 [project.scripts]
 pdf-redact = "pdf_redact.app:main"
+pdf-redact-batch = "pdf_redact.batch:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

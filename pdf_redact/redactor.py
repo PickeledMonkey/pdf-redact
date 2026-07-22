@@ -7,7 +7,7 @@ from typing import Sequence
 
 import fitz
 
-from pdf_redact.detector import Finding
+from pdf_redact.detector import Finding, findings_for_page
 
 
 def apply_redactions(
@@ -18,10 +18,15 @@ def apply_redactions(
     fill: tuple[float, float, float] = (0, 0, 0),
     text_overlay: str = "",
     only_selected: bool = True,
+    progress_callback=None,
+    large_document: bool | None = None,
 ) -> Path:
     """Burn in redaction annotations for selected findings and write PDF.
 
     Returns the output path.
+
+    When ``large_document`` is True (or auto-detected for high page counts),
+    save uses slightly lighter garbage collection to reduce peak memory/time.
     """
     output_path = Path(output_path)
     if isinstance(source, (str, Path)):
@@ -41,11 +46,15 @@ def apply_redactions(
                 continue
             by_page.setdefault(finding.page_index, []).extend(finding.rects)
 
-        for page_index, rects in by_page.items():
+        pages_with_work = sorted(by_page.keys())
+        total = max(len(pages_with_work), 1)
+        for n, page_index in enumerate(pages_with_work, start=1):
+            if progress_callback:
+                progress_callback(n, total, f"Redacting page {page_index + 1}")
             if page_index < 0 or page_index >= doc.page_count:
                 continue
             page = doc.load_page(page_index)
-            for rect in rects:
+            for rect in by_page[page_index]:
                 r = fitz.Rect(rect)
                 if r.is_empty or r.is_infinite:
                     continue
@@ -81,14 +90,27 @@ def apply_redactions(
         except Exception:  # noqa: BLE001
             pass
 
+        if large_document is None:
+            large_document = doc.page_count >= 500
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        doc.save(
-            output_path,
-            garbage=4,
-            deflate=True,
-            clean=True,
-            encryption=fitz.PDF_ENCRYPT_NONE,
-        )
+        if large_document:
+            # Lighter pass: still deflate; avoid heaviest clean/gc for huge files
+            doc.save(
+                output_path,
+                garbage=3,
+                deflate=True,
+                clean=False,
+                encryption=fitz.PDF_ENCRYPT_NONE,
+            )
+        else:
+            doc.save(
+                output_path,
+                garbage=4,
+                deflate=True,
+                clean=True,
+                encryption=fitz.PDF_ENCRYPT_NONE,
+            )
     finally:
         if owns_doc:
             doc.close()
@@ -104,7 +126,11 @@ def render_page_image(
     findings: Sequence[Finding] | None = None,
     show_unselected: bool = True,
 ) -> "Image.Image":  # type: ignore[name-defined]
-    """Render a page to a PIL Image, overlaying finding rectangles."""
+    """Render a page to a PIL Image, overlaying finding rectangles.
+
+    Pass only this page's findings when possible (avoids O(all findings) on
+    large documents). Full lists are still filtered safely.
+    """
     from PIL import Image, ImageDraw
 
     page = doc.load_page(page_index)
@@ -114,9 +140,8 @@ def render_page_image(
     draw = ImageDraw.Draw(img, "RGBA")
 
     if findings:
-        for f in findings:
-            if f.page_index != page_index:
-                continue
+        page_findings = findings_for_page(findings, page_index)
+        for f in page_findings:
             if not f.rects:
                 continue
             if f.selected:

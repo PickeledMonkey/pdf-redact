@@ -45,8 +45,30 @@ def page_needs_ocr(page: fitz.Page, *, min_chars: int = 40) -> bool:
     return len(text) < min_chars
 
 
-def document_needs_ocr(doc: fitz.Document, *, min_chars: int = 40) -> bool:
-    return any(page_needs_ocr(doc.load_page(i), min_chars=min_chars) for i in range(doc.page_count))
+def document_needs_ocr(
+    doc: fitz.Document,
+    *,
+    min_chars: int = 40,
+    page_indices: list[int] | None = None,
+    sample_limit: int | None = None,
+) -> bool:
+    """Return True if any checked page looks like it needs OCR.
+
+    Parameters
+    ----------
+    page_indices:
+        Optional 0-based pages to inspect. Default: all pages.
+    sample_limit:
+        If set, only the first N of those pages are checked (fast open-path
+        heuristic for very large documents).
+    """
+    if page_indices is None:
+        indices = list(range(doc.page_count))
+    else:
+        indices = [i for i in page_indices if 0 <= i < doc.page_count]
+    if sample_limit is not None and sample_limit >= 0:
+        indices = indices[:sample_limit]
+    return any(page_needs_ocr(doc.load_page(i), min_chars=min_chars) for i in indices)
 
 
 def ocr_page_text(
@@ -83,21 +105,27 @@ def ocr_document(
     language: str = "eng",
     dpi: int = 200,
     only_if_needed: bool = True,
+    page_indices: list[int] | None = None,
     progress_callback=None,
 ) -> dict[int, str]:
     """OCR pages and return {page_index: text}.
 
     When only_if_needed is True, pages with sufficient text skip OCR and use
-    native extraction instead.
+    native extraction instead. Only requested pages are stored (streaming-friendly
+    for large jobs that process page ranges).
     """
     status = tesseract_available()
     results: dict[int, str] = {}
-    total = doc.page_count
+    if page_indices is None:
+        indices = list(range(doc.page_count))
+    else:
+        indices = [i for i in page_indices if 0 <= i < doc.page_count]
+    total = len(indices)
 
-    for i in range(total):
+    for n, i in enumerate(indices, start=1):
         page = doc.load_page(i)
         if progress_callback:
-            progress_callback(i + 1, total, f"OCR page {i + 1}/{total}")
+            progress_callback(n, total, f"OCR page {i + 1}/{doc.page_count}")
 
         native = page.get_text("text") or ""
         if only_if_needed and not page_needs_ocr(page):
