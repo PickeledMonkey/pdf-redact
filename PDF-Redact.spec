@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec — one-folder portable build (no install).
+# PyInstaller spec — one-folder portable build (GUI + batch CLI).
 # Build on Windows:  powershell -File Build-Portable.ps1
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files
@@ -14,23 +14,31 @@ try:
 except Exception:
     pil_datas = []
 
+gui_hidden = [
+    "PIL._tkinter_finder",
+    "tkinter",
+    "tkinter.filedialog",
+    "tkinter.messagebox",
+    "customtkinter",
+    "tkinterdnd2",
+    "fitz",
+    "regex",
+    *ctk_hidden,
+    *dnd_hidden,
+]
+
+batch_hidden = [
+    "fitz",
+    "regex",
+    "PIL",
+]
+
 a = Analysis(
     ["run_app.py"],
     pathex=[],
     binaries=ctk_binaries + dnd_binaries,
     datas=ctk_datas + dnd_datas + pil_datas,
-    hiddenimports=[
-        "PIL._tkinter_finder",
-        "tkinter",
-        "tkinter.filedialog",
-        "tkinter.messagebox",
-        "customtkinter",
-        "tkinterdnd2",
-        "fitz",
-        "regex",
-        *ctk_hidden,
-        *dnd_hidden,
-    ],
+    hiddenimports=gui_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -41,7 +49,30 @@ a = Analysis(
     noarchive=False,
 )
 
+b = Analysis(
+    ["run_batch.py"],
+    pathex=[],
+    binaries=[],
+    datas=pil_datas,
+    hiddenimports=batch_hidden,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=["customtkinter", "tkinterdnd2"],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+# Share dependencies between GUI and batch into one onedir
+MERGE(
+    (a, "PDF-Redact", "PDF-Redact"),
+    (b, "PDF-Redact-Batch", "PDF-Redact-Batch"),
+)
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz_b = PYZ(b.pure, b.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
@@ -53,7 +84,26 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,  # GUI app — no console window
+    console=False,  # GUI — no console window
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=None,
+)
+
+exe_batch = EXE(
+    pyz_b,
+    b.scripts,
+    [],
+    exclude_binaries=True,
+    name="PDF-Redact-Batch",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,  # CLI — show progress on stderr
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -67,6 +117,10 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
+    exe_batch,
+    b.binaries,
+    b.zipfiles,
+    b.datas,
     strip=False,
     upx=False,
     upx_exclude=[],

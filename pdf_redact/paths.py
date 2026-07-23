@@ -27,16 +27,31 @@ def resource_dir() -> Path:
 
 
 def portable_tesseract_candidates() -> list[Path]:
-    """Likely locations for a no-install Tesseract bundle next to the app."""
-    root = app_dir()
-    names = (
-        root / "tesseract" / "tesseract.exe",
-        root / "tesseract" / "tesseract",
-        root / "Tesseract-OCR" / "tesseract.exe",
-        root / "bin" / "tesseract.exe",
-        root / "tesseract.exe",
-    )
-    return list(names)
+    """Likely locations for a no-install Tesseract bundle next to the app.
+
+    Portable layout is typically::
+
+        pdf-redact-portable/
+          PDF-Redact/PDF-Redact.exe   ← app_dir()
+          tesseract/tesseract.exe    ← sibling of PDF-Redact/
+    """
+    roots = [app_dir()]
+    parent = app_dir().parent
+    if parent != app_dir():
+        roots.append(parent)
+
+    names: list[Path] = []
+    for root in roots:
+        names.extend(
+            (
+                root / "tesseract" / "tesseract.exe",
+                root / "tesseract" / "tesseract",
+                root / "Tesseract-OCR" / "tesseract.exe",
+                root / "bin" / "tesseract.exe",
+                root / "tesseract.exe",
+            )
+        )
+    return names
 
 
 def resolve_tesseract() -> Path | None:

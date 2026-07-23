@@ -43,7 +43,8 @@ Drag and drop a PDF, auto-detect sensitive spans (SSN, phone, email, DOB, MRN, p
 
 1. Download **`pdf-redact-portable.zip`** from [GitHub Releases](https://github.com/PickeledMonkey/pdf-redact/releases) or the latest **Actions** artifact (`Build Windows portable`).
 2. Unzip anywhere (USB, Desktop, `C:\Tools\pdf-redact\`).
-3. Double-click **`Start-PDF-Redact.bat`**.
+3. Double-click **`Start-PDF-Redact.bat`** for the GUI, or use **`PDF-Redact-Batch.bat`** for large/headless jobs.
+4. Large PDFs: `PDF-Redact-Batch.bat big.pdf -o out.pdf --pages all --report report.json` then open `out.pdf` in the GUI to spot-check.
 
 OCR for scanned PDFs is included when the package contains a `tesseract\` folder (CI builds try to bundle it).
 

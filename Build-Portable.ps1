@@ -6,7 +6,10 @@
     Produces:
       dist\pdf-redact-portable\
         Start-PDF-Redact.bat
-        PDF-Redact\PDF-Redact.exe
+        PDF-Redact-Batch.bat
+        PDF-Redact\
+          PDF-Redact.exe         (GUI)
+          PDF-Redact-Batch.exe   (large-doc CLI)
         tesseract\          (if -BundleTesseract and choco/winget available)
         SETUP.txt
         portable.json
@@ -60,6 +63,9 @@ $built = Join-Path $AppRoot 'dist\PDF-Redact'
 if (-not (Test-Path -LiteralPath (Join-Path $built 'PDF-Redact.exe'))) {
     throw "PyInstaller did not produce PDF-Redact.exe"
 }
+if (-not (Test-Path -LiteralPath (Join-Path $built 'PDF-Redact-Batch.exe'))) {
+    throw "PyInstaller did not produce PDF-Redact-Batch.exe (batch CLI for large PDFs)"
+}
 
 $portableRoot = Join-Path $AppRoot 'dist\pdf-redact-portable'
 if (Test-Path -LiteralPath $portableRoot) {
@@ -70,6 +76,7 @@ New-Item -ItemType Directory -Path $portableRoot | Out-Null
 Write-Output "Assembling portable folder..."
 Copy-Item -Path $built -Destination (Join-Path $portableRoot 'PDF-Redact') -Recurse
 Copy-Item -Path (Join-Path $AppRoot 'Start-PDF-Redact.bat') -Destination $portableRoot
+Copy-Item -Path (Join-Path $AppRoot 'PDF-Redact-Batch.bat') -Destination $portableRoot
 Copy-Item -Path (Join-Path $AppRoot 'portable.json') -Destination $portableRoot
 Copy-Item -Path (Join-Path $AppRoot 'SETUP.txt') -Destination $portableRoot
 Copy-Item -Path (Join-Path $AppRoot 'LICENSE') -Destination $portableRoot -ErrorAction SilentlyContinue
@@ -123,11 +130,14 @@ if ($BundleTesseract) {
 
 # Small launcher note inside package
 @"
-PDF Redact — Portable (no install)
-==================================
+PDF Redact — Portable (no install) v0.2.0
+=========================================
 1. Unzip this folder anywhere (USB, Desktop, network share).
-2. Double-click Start-PDF-Redact.bat
-3. No Python or installer required.
+2. GUI:   double-click Start-PDF-Redact.bat
+3. Batch: PDF-Redact-Batch.bat input.pdf -o out.pdf --pages all --report report.json
+4. No Python or installer required.
+
+Large PDFs (500+ pages): prefer the batch CLI, then spot-check in the GUI.
 
 OCR: If a tesseract\ folder is present, scanned PDFs work offline.
      Otherwise only text-layer PDFs auto-detect PHI/PII.

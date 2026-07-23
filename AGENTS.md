@@ -26,7 +26,7 @@ findings list scoped to page + capped.
 - Keep detection rules in `pdf_redact/patterns.py`
 - Permanent redaction only via PyMuPDF `add_redact_annot` + `apply_redactions` (never paint-over alone)
 - GUI must remain usable without Tesseract; OCR is optional with a clear status badge
-- Portable Windows = PyInstaller onedir + optional bundled `tesseract\`; resolve via `pdf_redact/paths.py`
+- Portable Windows = PyInstaller onedir (`PDF-Redact.exe` + `PDF-Redact-Batch.exe`) + optional bundled `tesseract\`; resolve via `pdf_redact/paths.py` (checks app dir and parent)
 - Do not log full document text or findings to remote services
 - Batch `--report` uses masked previews only (no full PHI dump)
 

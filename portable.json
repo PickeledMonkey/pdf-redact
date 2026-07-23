@@ -1,7 +1,7 @@
 {
   "name": "PDF Redact",
   "portable": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "no_install": true,
-  "notes": "Frozen build: unzip and run Start-PDF-Redact.bat. Keep tesseract\\ beside the app for OCR."
+  "notes": "Frozen build: unzip and run Start-PDF-Redact.bat (GUI) or PDF-Redact-Batch.bat (large PDFs). Keep tesseract\\ beside the app for OCR."
 }

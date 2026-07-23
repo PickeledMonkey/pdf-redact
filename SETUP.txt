@@ -1,16 +1,20 @@
 PDF Redact — Portable Windows Package (no install)
 ==================================================
 
-Fast PHI/PII redaction for PDF files, including OCR for scanned/image PDFs.
+Fast PHI/PII redaction for PDF files, including OCR for scanned/image PDFs
+and a batch CLI for large documents (hundreds to ~15,000 pages).
 
 
 What you get
 ------------
-  Start-PDF-Redact.bat     Double-click to launch
-  PDF-Redact\              App binaries (PyInstaller build — no Python needed)
-  tesseract\               Bundled OCR engine (when included in the package)
-  SETUP.txt                This guide
-  portable.json            Marks this folder as a portable copy
+  Start-PDF-Redact.bat      Double-click to launch the GUI
+  PDF-Redact-Batch.bat      Console CLI for large / headless jobs
+  PDF-Redact\               App binaries (PyInstaller — no Python needed)
+    PDF-Redact.exe          GUI
+    PDF-Redact-Batch.exe    Batch CLI
+  tesseract\                Bundled OCR engine (when included in the package)
+  SETUP.txt                 This guide
+  portable.json             Marks this folder as a portable copy
 
 
 Requirements on the work machine
@@ -18,7 +22,7 @@ Requirements on the work machine
   - Windows 10 or 11 (64-bit)
   - No Python install
   - No installer / admin rights required for the app itself
-  - Display for the GUI
+  - Display for the GUI (batch CLI works from Command Prompt alone)
 
 
 Step 1 — Copy the folder
@@ -30,11 +34,11 @@ Step 1 — Copy the folder
     C:\Tools\pdf-redact\
     Network share (local copy recommended for speed)
 
-  Keep the whole folder together. Do not separate PDF-Redact\ from the launcher.
+  Keep the whole folder together. Do not separate PDF-Redact\ from the launchers.
 
 
-Step 2 — Launch
----------------
+Step 2 — Launch the GUI
+-----------------------
   Double-click:
 
     Start-PDF-Redact.bat
@@ -44,13 +48,33 @@ Step 2 — Launch
     PDF-Redact\PDF-Redact.exe
 
 
-Step 3 — Redact
----------------
+Step 3 — Redact (GUI)
+---------------------
   1. Drag and drop a PDF (or use Open PDF)
   2. Review auto-detected PHI/PII findings
   3. For scanned pages: click Run OCR (needs tesseract\ folder)
   4. Toggle findings or draw Manual boxes
   5. Export Redacted → saves a new permanently redacted PDF
+
+  Large documents (500+ pages): the GUI skips full auto-scan. Use
+  Scan Page / Scan All, jump-to-page, or prefer the batch CLI below.
+
+
+Step 4 — Large PDFs (batch CLI)
+-------------------------------
+  Open Command Prompt in this folder, then:
+
+    PDF-Redact-Batch.bat big.pdf -o big_redacted.pdf --pages all --report report.json
+
+  Common options:
+
+    --pages 1-500,900     Process only those pages (1-based)
+    --ocr never|auto|always
+    --rules ssn,email,phone
+    --list-rules
+    --report report.json  Counts + masked samples (not full PHI)
+
+  Then open the output PDF in the GUI and jump to report pages to spot-check.
 
 
 OCR notes
