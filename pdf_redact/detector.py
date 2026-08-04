@@ -63,6 +63,23 @@ def find_in_text(
     return _non_overlapping(raw)
 
 
+# Invisible / format characters that PDF extractors leave between digit groups.
+_ZW_FORMAT = re.compile(
+    r"[\u00ad\u200b-\u200d\u2060\ufeff]"  # soft hyphen, ZW*, word joiner, BOM
+)
+# Map common dash-like glyphs to ASCII hyphen for search_for.
+_DASH_LIKE = re.compile(
+    r"[\u2212\u2010-\u2015\uff0d\ufe63\u2043\ufe58\u00b7\u2022]"
+)
+
+
+def _normalize_separators(snippet: str) -> str:
+    """Strip zero-width glue and normalize dash-like glyphs for geometry search."""
+    s = _ZW_FORMAT.sub("", snippet)
+    s = _DASH_LIKE.sub("-", s)
+    return s
+
+
 def _search_variants(snippet: str) -> list[str]:
     """Generate alternate spellings for page.search_for when separators differ."""
     variants: list[str] = []
@@ -74,25 +91,28 @@ def _search_variants(snippet: str) -> list[str]:
             variants.append(s)
 
     add(snippet)
+    normalized = _normalize_separators(snippet)
+    add(normalized)
     trimmed = " ".join(snippet.split())
     add(trimmed)
+    add(" ".join(normalized.split()))
 
     # Collapse any run of non-digits between digit groups to a single hyphen /
     # nothing — helps when extraction used · or en-dash but the visual text
     # layer still responds to ASCII hyphen search (or vice versa).
-    digits_hyphen = re.sub(r"\D+", "-", snippet.strip())
+    digits_hyphen = re.sub(r"\D+", "-", normalized.strip())
     digits_hyphen = re.sub(r"-+", "-", digits_hyphen).strip("-")
     add(digits_hyphen)
 
     # Continuous digits last — often matches multiple unrelated numbers on a page
-    continuous = re.sub(r"\D+", "", snippet)
+    continuous = re.sub(r"\D+", "", normalized)
     if continuous and continuous != digits_hyphen:
         add(continuous)
 
     # Common PDF/OCR separator swaps (exact group structure preserved)
     if digits_hyphen.count("-") >= 1:
         parts = digits_hyphen.split("-")
-        for sep in ("-", "\u00b7", "\u2013", "\u2014", " ", " - "):
+        for sep in ("-", "\u00b7", "\u2013", "\u2014", " ", " - ", "."):
             add(sep.join(parts))
 
     return variants
@@ -123,7 +143,8 @@ def _pick_occurrence(
 
 def _rects_from_words(page: fitz.Page, snippet: str) -> list[fitz.Rect]:
     """Locate multi-token snippets via page word list (e.g. '123 - 45 - 6789')."""
-    tokens = [t for t in re.split(r"\s+", snippet.strip()) if t]
+    norm_snippet = _normalize_separators(snippet)
+    tokens = [t for t in re.split(r"\s+", norm_snippet.strip()) if t]
     if not tokens:
         return []
 
@@ -140,7 +161,7 @@ def _rects_from_words(page: fitz.Page, snippet: str) -> list[fitz.Rect]:
     n = len(tokens)
     for line_words in lines.values():
         line_words = sorted(line_words, key=lambda w: int(w[7]))
-        texts = [str(w[4]) for w in line_words]
+        texts = [_normalize_separators(str(w[4])) for w in line_words]
         for i in range(0, len(texts) - n + 1):
             if texts[i : i + n] == tokens:
                 rect = fitz.Rect(line_words[i][:4])
@@ -149,8 +170,16 @@ def _rects_from_words(page: fitz.Page, snippet: str) -> list[fitz.Rect]:
                 return [rect]
 
     # Digit-group fallback: find area/group/serial (or similar) in order on one line
-    groups = re.findall(r"\d+", snippet)
+    groups = re.findall(r"\d+", norm_snippet)
     if len(groups) < 2:
+        # Continuous 9-digit SSN stored as one word
+        if len(groups) == 1 and len(groups[0]) >= 4:
+            needle = groups[0]
+            for line_words in lines.values():
+                for w in line_words:
+                    digits = re.sub(r"\D+", "", _normalize_separators(str(w[4])))
+                    if digits == needle:
+                        return [fitz.Rect(w[:4])]
         return []
 
     for line_words in lines.values():
@@ -159,7 +188,7 @@ def _rects_from_words(page: fitz.Page, snippet: str) -> list[fitz.Rect]:
         found_rects: list[fitz.Rect] = []
         gi = 0
         for w in line_words:
-            wt = str(w[4])
+            wt = _normalize_separators(str(w[4]))
             # Word may be "123-45-6789" or a single group "123"
             parts = re.findall(r"\d+", wt)
             if not parts:
@@ -194,6 +223,14 @@ def _rects_for_span(page: fitz.Page, start: int, end: int, full_text: str) -> li
     if not snippet.strip():
         return []
 
+    norm_snippet = _normalize_separators(snippet)
+    exactish = {
+        snippet,
+        norm_snippet,
+        " ".join(snippet.split()),
+        " ".join(norm_snippet.split()),
+    }
+
     # 1) search_for with exact + separator variants; disambiguate multi-hits
     for candidate in _search_variants(snippet):
         hits = page.search_for(candidate, quads=False) or []
@@ -201,8 +238,10 @@ def _rects_for_span(page: fitz.Page, start: int, end: int, full_text: str) -> li
             continue
         rects = [fitz.Rect(r) for r in hits]
         # Exact / near-exact candidates: use occurrence index
-        if candidate == snippet or candidate == " ".join(snippet.split()):
-            return _pick_occurrence(rects, full_text=full_text, start=start, candidate=candidate)
+        if candidate in exactish:
+            return _pick_occurrence(
+                rects, full_text=full_text, start=start, candidate=candidate
+            )
         # Variant hit: only trust a unique match (avoid wrong line for '123-45-6789'
         # when the real hit was '123 - 45 - 6789' on another line)
         if len(rects) == 1:
@@ -214,7 +253,7 @@ def _rects_for_span(page: fitz.Page, start: int, end: int, full_text: str) -> li
         return word_rects
 
     # 3) Last resort: continuous digits only if unique on page
-    continuous = re.sub(r"\D+", "", snippet)
+    continuous = re.sub(r"\D+", "", norm_snippet)
     if continuous and len(continuous) >= 4:
         hits = page.search_for(continuous, quads=False) or []
         if len(hits) == 1:

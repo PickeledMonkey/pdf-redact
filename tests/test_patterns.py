@@ -29,6 +29,10 @@ def test_ssn_formats():
         "123\u201445\u20146789",  # em dash
         "123\u00b745\u00b76789",  # middle dot (common PDF re-encoding of dash)
         "123.45.6789",
+        "123\u00ad45\u00ad6789",  # soft hyphen (Word/PDF glue)
+        "123\u200b45\u200b6789",  # zero-width space
+        "123\uff0d45\uff0d6789",  # fullwidth hyphen
+        "123\u201145\u20116789",  # non-breaking hyphen
     ]
 
     for s in samples:
@@ -44,6 +48,13 @@ def test_ssn_rejects_invalid_area_group_serial():
     for s in ("000-12-3456", "666-12-3456", "900-12-3456", "123-00-6789", "123-45-0000"):
         matches = find_in_text(s, rules=active_rules(["ssn"]))
         assert matches == [], f"should not match invalid SSN {s!r}"
+
+
+def test_ssn_rejects_zip_plus_four_false_positive():
+    """ZIP+4 and similar 5-4 runs must not match as SSN via empty mid-separator."""
+    for s in ("10001-1234", "62704-9999", "12345-6789"):
+        matches = find_in_text(f"ZIP {s} end.", rules=active_rules(["ssn"]))
+        assert matches == [], f"should not treat {s!r} as SSN"
 
 
 def test_ssn_dashed_in_pdf_gets_rects():

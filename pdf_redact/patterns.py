@@ -27,10 +27,19 @@ def _compile(pattern: str, flags: int = re.IGNORECASE | re.MULTILINE) -> re.Patt
 
 
 # Separators between SSN groups. PDF text layers and OCR often mangle ASCII
-# hyphens into en/em dashes, middle dots, or insert spaces around the dash
-# (e.g. "123 - 45 - 6789", "123·45·6789"). Allow zero-or-more of these so both
-# "123456789" and dashed forms match.
-_SSN_SEP = r"[\s.\u00b7\u2022\u2212\u2010-\u2015\-]*"
+# hyphens into en/em dashes, middle dots, fullwidth hyphens, soft hyphens,
+# zero-width glue, or insert spaces around the dash
+# (e.g. "123 - 45 - 6789", "123·45·6789", "123\u00ad45\u00ad6789").
+_SSN_SEP_CLASS = (
+    r"\s.\u00b7\u2022"  # whitespace, period, middle dot, bullet
+    r"\u2212\u2010-\u2015\-"  # minus, hyphen/dash range, ASCII hyphen
+    r"\u00ad"  # soft hyphen
+    r"\u200b-\u200d\u2060\ufeff"  # zero-width space/joiner/BOM/word joiner
+    r"\uff0d\ufe63\u2043\ufe58"  # fullwidth/small hyphen, hyphen bullet
+)
+# Require non-empty separators for dashed/spaced forms so ZIP+4 (10001-1234)
+# and similar 5-4 digit runs are not misread as 3+2+4 with an empty middle sep.
+_SSN_SEP_REQ = rf"[{_SSN_SEP_CLASS}]+"
 
 # Ordered roughly by priority / uniqueness so overlapping matches can prefer
 # more specific labels during non-overlapping resolution.
@@ -38,8 +47,15 @@ RULES: list[PatternRule] = [
     PatternRule(
         name="ssn",
         label="SSN",
+        # Continuous 9 digits OR area + sep + group + sep + serial.
+        # Empty separators are only allowed for the pure continuous form.
         pattern=_compile(
-            rf"\b(?!000|666|9\d{{2}})\d{{3}}{_SSN_SEP}(?!00)\d{{2}}{_SSN_SEP}(?!0000)\d{{4}}\b"
+            rf"\b(?!000|666|9\d{{2}})\d{{3}}"
+            rf"(?:"
+            rf"(?!00)\d{{2}}(?!0000)\d{{4}}"
+            rf"|"
+            rf"{_SSN_SEP_REQ}(?!00)\d{{2}}{_SSN_SEP_REQ}(?!0000)\d{{4}}"
+            rf")\b"
         ),
         description="US Social Security Number",
     ),

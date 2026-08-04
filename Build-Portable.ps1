@@ -130,7 +130,7 @@ if ($BundleTesseract) {
 
 # Small launcher note inside package
 @"
-PDF Redact — Portable (no install) v0.2.0
+PDF Redact — Portable (no install) v0.2.1
 =========================================
 1. Unzip this folder anywhere (USB, Desktop, network share).
 2. GUI:   double-click Start-PDF-Redact.bat
