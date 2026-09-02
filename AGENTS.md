@@ -46,7 +46,9 @@ pdf-redact-batch --list-rules
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Build-Portable.ps1
-# CI: .github/workflows/build-windows-portable.yml → artifact pdf-redact-portable.zip
+# CI: .github/workflows/build-windows-portable.yml
+#   - Linux pytest on push/PR (SHA-pinned actions, contents: read)
+#   - Windows portable zip on main/tags (contents: write only on that job)
 ```
 
 ## Safety
